@@ -1,0 +1,19 @@
+# 训练配置
+train:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  optimizer: "adam"
+  scheduler: "cosine"
+
+# 模型配置
+model:
+  name: "resnet50"
+  pretrained: true
+  num_classes: 1000
+
+# 数据配置
+data:
+  dataset_path: "./data/raw"
+  image_size: [224, 224]
+  augmentation: true
