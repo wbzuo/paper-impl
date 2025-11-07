@@ -32,10 +32,9 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
 
         X = X.to(args.device)
         Y = Y.to(args.device)
-
-
         loss_mask = loss_mask.to(args.device)
 
+        # cosine warmup
         lr = get_lr(epoch * iters + step, args.epochs * iters, args.learning_rate)
         
         for param_group in optimizer.param_groups:
