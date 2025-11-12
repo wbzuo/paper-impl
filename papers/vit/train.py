@@ -9,14 +9,14 @@ from model import ViT  # For showing training progress
 
 # Hyperparameters
 config = {
-    'patch_size': 4,
-    'emb_size': 512,
-    'img_size': 32,
+    'patch_size': 16,
+    'emb_size': 768,
+    'img_size': 224,
     'depth': 6,
     'n_classes': 10,
-    'batch_size': 512,
+    'batch_size': 64,
     'epochs': 10,
-    'learning_rate': 1e-3,
+    'learning_rate': 1e-2,
 }
 
 # Initialize model, dataset, and dataloaders
