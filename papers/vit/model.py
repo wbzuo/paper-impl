@@ -5,7 +5,13 @@ from einops import rearrange, reduce, repeat
 from einops.layers.torch import Rearrange, Reduce
 
 class PatchEmbedding(nn.Module):
-    def __init__(self, in_channels: int = 3, patch_size: int = 16, emb_size: int = 768, img_size: int = 224):
+    def __init__(
+        self,
+        in_channels: int = 3, 
+        patch_size: int = 16, 
+        emb_size: int = 768, 
+        img_size: int = 224,
+        ):
         super().__init__()
         self.patch_size = patch_size
         # 224 = 14 * 16
@@ -33,10 +39,9 @@ class PatchEmbedding(nn.Module):
         # 生成cls_token的emb_size 添加在序列最前面的
         self.cls_token = nn.Parameter(torch.randn(1, 1, emb_size))
         
-        num_patches  = (img_size // patch_size) ** 2
-        self.positions = nn.Parameter(torch.randn(num_patches+ 1, emb_size))
-        # 添加dropout
-        self.dropout = nn.Dropout(0.2)
+        self.num_patches  = (img_size // patch_size) ** 2
+        self.positions = nn.Parameter(torch.randn(1, self.num_patches+ 1, emb_size))
+
          
     def forward(self, x):
         b, _, _, _ = x.shape
@@ -54,6 +59,11 @@ class PatchEmbedding(nn.Module):
 
         return x
 
+# input = torch.randn(128, 3, 224,224)
+# pathcEmbedding = PatchEmbedding()
+# output = pathcEmbedding(input)
+# print(f"shape of input is {input.shape}")
+# print(f"shape of output is {output.shape}")
 
 # 注意力机制 # 官网实现
 # class MultiHeadAttention(nn.Module):
@@ -92,6 +102,10 @@ class PatchEmbedding(nn.Module):
 #         super().__init__()
 #         self.emb_size = emb_size
 #         self.num_heads = num_heads
+
+#         # 确保emb_size可以被num_heads整除
+#         assert self.head_dim * num_heads == emb_size, "emb_size must be divisible by num_heads"
+
 #         # 使用单个矩阵一次性计算出queries,keys,values
 #         self.qkv = nn.Linear(emb_size, emb_size * 3)
 #         self.att_drop = nn.Dropout(dropout)
@@ -110,7 +124,7 @@ class PatchEmbedding(nn.Module):
 #             energy.mask_fill(~mask, fill_value)
         
 #         scaling = self.emb_size ** (1/2)
-#         att = F.softmax(energy, dim=-1) / scaling
+#         att = F.softmax(energy / scaling, dim=-1) 
 
 #         att = self.att_drop(att)
 
@@ -122,99 +136,168 @@ class PatchEmbedding(nn.Module):
 
 #         out = self.projection(out)
 #         return out
-    
-# class ResidualAdd(nn.Module):
-#     def __init__(self, fn):
-#         super().__init__()
-#         self.fn = fn
+
+class MultiHeadAttention(nn.Module):
+    """
+    Multi-Head Self-Attention (MHSA) module
+    Input: (B, N, D)
+    Output: (B, N, D)
+    """
+    def __init__(self, embed_dim=768, num_heads=8, dropout=0.1):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads  # Dimension per head
         
-#     def forward(self, x, **kwargs):
-#         res = x
-#         x = self.fn(x, **kwargs)
-#         x += res
-#         return x
+        # Ensure embed_dim is divisible by num_heads
+        assert self.head_dim * num_heads == embed_dim, "Embed dim must be divisible by num heads"
+        
+        # Linear layers for Q, K, V
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        
+        # Output linear layer
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+        
+        # Dropout layer
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x):
+        B, N, D = x.shape  # (B, 65, 256)
+        
+        # Step 1: Compute Q, K, V (B, N, D)
+        q = self.q_proj(x)  # (B, 65, 256)
+        k = self.k_proj(x)  # (B, 65, 256)
+        v = self.v_proj(x)  # (B, 65, 256)
+        
+        # Step 2: Split into multiple heads (B, num_heads, N, head_dim)
+        q = q.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)  # (B, 8, 65, 32)
+        k = k.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)  # (B, 8, 65, 32)
+        v = v.view(B, N, self.num_heads, self.head_dim).transpose(1, 2)  # (B, 8, 65, 32)
+        
+        # Step 3: Compute attention scores (B, num_heads, N, N)
+        scores = torch.matmul(q, k.transpose(-2, -1))  # (B, 8, 65, 65)
+        scores = scores / torch.sqrt(torch.tensor(self.head_dim, dtype=torch.float32))  # Scale
+        
+        # Step 4: Softmax to get attention weights (B, num_heads, N, N)
+        attn_weights = torch.softmax(scores, dim=-1)  # (B, 8, 65, 65)
+        attn_weights = self.dropout(attn_weights)
+        
+        # Step 5: Compute weighted sum of V (B, num_heads, N, head_dim)
+        attn_output = torch.matmul(attn_weights, v)  # (B, 8, 65, 32)
+        
+        # Step 6: Concatenate heads (B, N, D)
+        attn_output = attn_output.transpose(1, 2).contiguous()  # (B, 65, 8, 32)
+        attn_output = attn_output.view(B, N, D)  # (B, 65, 256)
+        
+        # Step 7: Linear projection
+        output = self.out_proj(attn_output)  # (B, 65, 256)
+        output = self.dropout(output)
+        
+        return output
 
-# class FeedForwardBlock(nn.Sequential):
-#     def __init__(self, emb_size: int, expansion: int = 4, drop_p: float = 0.):
-#         super().__init__(
-#             nn.Linear(emb_size, expansion * emb_size),
-#             nn.GELU(),
-#             nn.Dropout(drop_p),
-#             nn.Linear(expansion * emb_size, emb_size),
-#         )
+# input = torch.randn(128, 197, 768)
+# mha = MultiHeadAttention()
+# output = mha(input)
+# print(f"shape of input is {input.shape}")
+# print(f"shape of output is {output.shape}")
 
-# class TransformerEncoderBlock(nn.Sequential):
-#     def __init__(self,
-#                  emb_size: int = 768,
-#                  drop_p: float = 0.,
-#                  forward_expansion: int = 4,
-#                  forward_drop_p: float = 0.,
-#                  ** kwargs):
-#         super().__init__(
-#             ResidualAdd(nn.Sequential(
-#                 nn.LayerNorm(emb_size),
-#                 MultiHeadAttention(emb_size, **kwargs),
-#                 nn.Dropout(drop_p)
-#             )),
-#             ResidualAdd(nn.Sequential(
-#                 nn.LayerNorm(emb_size),
-#                 FeedForwardBlock(
-#                     emb_size, expansion=forward_expansion, drop_p=forward_drop_p),
-#                 nn.Dropout(drop_p)
-#             )
-#             ))
+
+class ResidualAdd(nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+        
+    def forward(self, x, **kwargs):
+        res = x
+        x = self.fn(x, **kwargs)
+        x += res
+        return x
+
+
+
+class FeedForwardBlock(nn.Sequential):
+    def __init__(self, emb_size: int, expansion: int = 4, drop_p: float = 0.):
+        super().__init__(
+            nn.Linear(emb_size, expansion * emb_size),
+            nn.GELU(),
+            nn.Dropout(drop_p),
+            nn.Linear(expansion * emb_size, emb_size),
+        )
+
+class TransformerEncoderBlock(nn.Sequential):
+    def __init__(self,
+                 emb_size: int = 768,
+                 drop_p: float = 0.,
+                 forward_expansion: int = 4,
+                 forward_drop_p: float = 0.,
+                 ** kwargs):
+        super().__init__(
+            ResidualAdd(nn.Sequential(
+                nn.LayerNorm(emb_size),
+                MultiHeadAttention(emb_size, **kwargs),
+                nn.Dropout(drop_p)
+            )),
+            ResidualAdd(nn.Sequential(
+                nn.LayerNorm(emb_size),
+                FeedForwardBlock(
+                    emb_size, expansion=forward_expansion, drop_p=forward_drop_p),
+                nn.Dropout(drop_p)
+            )
+            ))
        
         
-# class TransformerEncoder(nn.Sequential):
-#     def __init__(self, depth: int = 12, **kwargs):
-#         super().__init__(*[TransformerEncoderBlock(**kwargs) for _ in range(depth)])
+class TransformerEncoder(nn.Sequential):
+    def __init__(self, depth: int = 12, **kwargs):
+        super().__init__(*[TransformerEncoderBlock(**kwargs) for _ in range(depth)])
 
         
-# class ClassificationHead(nn.Sequential):
-#     def __init__(self, emb_size: int = 768, n_classes: int = 1000):
-#         super().__init__(
-#             Reduce('b n e -> b e', reduction='mean'),
-#             nn.LayerNorm(emb_size), 
-#             nn.Linear(emb_size, n_classes))
+class ClassificationHead(nn.Sequential):
+    def __init__(self, emb_size: int = 768, n_classes: int = 1000):
+        super().__init__(
+            Reduce('b n e -> b e', reduction='mean'),
+            nn.LayerNorm(emb_size), 
+            nn.Linear(emb_size, n_classes))
 
         
-# class ViT(nn.Sequential):
-#     def __init__(self,     
-#                 in_channels: int = 3,
-#                 patch_size: int = 16,
-#                 emb_size: int = 768,
-#                 img_size: int = 224,
-#                 depth: int = 12,
-#                 n_classes: int = 1000,
-#                 **kwargs):
-#         super().__init__(
-#             PatchEmbedding(in_channels, patch_size, emb_size, img_size),
-#             TransformerEncoder(depth, emb_size=emb_size, **kwargs),
-#             ClassificationHead(emb_size, n_classes)
-#         )
+class ViT(nn.Sequential):
+    def __init__(self,     
+                in_channels: int = 3,
+                patch_size: int = 16,
+                emb_size: int = 768,
+                img_size: int = 224,
+                depth: int = 12,
+                n_classes: int = 1000,
+                **kwargs):
+        super().__init__(
+            PatchEmbedding(in_channels, patch_size, emb_size, img_size),
+            TransformerEncoder(depth, emb_size=emb_size, **kwargs),
+            ClassificationHead(emb_size, n_classes)
+        )
 
 
-# if __name__ == "__main__":
-#     print("start")
-#     input = torch.rand([128, 3, 32, 32])
-#     print(f"shape of input is {input.shape}")
-#     # model = PatchEmbedding(3, 16, 768)
-#     # output = model(input)
-#     # print(output.shape)
-#     # att = MultiHeadAttention()
-#     # output = att(output)
-#     model = ViT(in_channels = 3,
-#                 patch_size = 4,
-#                 emb_size = 384,
-#                 img_size = 32,
-#                 depth = 6,
-#                 n_classes = 10)
-#     output = model(input)
-#     print(f"shape of output is {output.shape}")
+if __name__ == "__main__":
+    print("start")
+    input = torch.rand([128, 3, 32, 32])
+    print(f"shape of input is {input.shape}")
+    # model = PatchEmbedding(3, 16, 768)
+    # output = model(input)
+    # print(output.shape)
+    # att = MultiHeadAttention()
+    # output = att(output)
+    model = ViT(in_channels = 3,
+                patch_size = 4,
+                emb_size = 384,
+                img_size = 32,
+                depth = 6,
+                n_classes = 10)
+    output = model(input)
+    print(f"shape of output is {output.shape}")
     
     
-#     # 对数据进行patch化
-#     # patch_size = 16
-#     # patches = rearrange(input, 'b c (w s1) (h s2) -> b (h w) (s1 s2 c)', s1 = patch_size, s2 = patch_size)
-#     # print(f"shape of patches is {patches.shape}")
-#     print("end")
+    # 对数据进行patch化
+    # patch_size = 16
+    # patches = rearrange(input, 'b c (w s1) (h s2) -> b (h w) (s1 s2 c)', s1 = patch_size, s2 = patch_size)
+    # print(f"shape of patches is {patches.shape}")
+    print("end")
