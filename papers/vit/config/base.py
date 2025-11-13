@@ -9,23 +9,23 @@ class ViTConfig:
     
     # 图像参数
     img_size: int = 32
-    patch_size: int = 4
+    patch_size: int = 8
     in_channels: int = 3
     
     # Transformer架构参数
-    embed_dim: int = 768
-    num_layers: int = 12
-    num_heads: int = 12
-    mlp_ratio: float = 4.0
+    embed_dim: int = 128
+    num_layers: int = 6
+    num_heads: int = 4
+    mlp_ratio: float = 2.0
     qkv_bias: bool = True
     dropout: float = 0.2
-    attn_dropout: float = 0.0
+    attn_dropout: float = 0.2
     drop_path_rate: float = 0.0
     num_classes: int = 10
 
     
     # 训练参数
-    batch_size: int = 32
+    batch_size: int = 16
     lr: float = 1e-3
     epochs: int = 300
     weight_decay: float = 1e-5

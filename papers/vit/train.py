@@ -5,7 +5,9 @@ from torch import nn
 from datasets import load_transformed_dataset  # Assuming this loads the dataset with necessary transformations
 from tqdm import tqdm
 from model import VisionTransformer
-
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
 
 
 def train_one_epoch(model, criterion ,optimizer ,train_loader, device, epoch):
@@ -71,7 +73,7 @@ def validate(model, val_loader, criterion, device):
             _, predicted = torch.max(outputs, 1)
             correct = (outputs == labels).sum().item()
             total_correct += correct
-            total_samples += imgs.size(0)
+            total_samples += images.size(0)
 
             # Collect preds and labels for confusion matrix
             all_preds.extend(outputs.cpu().numpy())
@@ -82,9 +84,9 @@ def validate(model, val_loader, criterion, device):
             avg_acc = total_correct / total_samples
             pbar.set_postfix({'Loss': f'{avg_loss:.4f}', 'Acc': f'{avg_acc:.4f}'})
 
-    avg_val_loss = val_loss / total_samples
-    avg_val_accuracy = val_accuracy / total_samples
-    return avg_loss, avg_acc, all_preds, all_labels
+    avg_loss = total_loss / total_samples
+    avg_accuracy = total_correct / total_samples
+    return avg_loss, avg_accuracy, all_preds, all_labels
 
 
 
@@ -328,7 +330,9 @@ if __name__ == "__main__":
     from config import get_config
     config = get_config()
     # Step 1: Load data
-    train_loader, test_loader = load_transformed_dataset(img_size = config.img_size ,batch_size=config.batch_size)
+    train_loader, val_loader = load_transformed_dataset(img_size = config.img_size ,batch_size=config.batch_size)
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                   'dog', 'frog', 'horse', 'ship', 'truck']
     
     # Step 2: Initialize ViT model
     model = VisionTransformer(
@@ -365,7 +369,7 @@ if __name__ == "__main__":
 
     # print(a, b)
     history, all_preds, all_labels = train_model(
-        model, train_loader, test_loader, criterion, optimizer, scheduler, config.device, config.epochs
+        model, train_loader, val_loader, criterion, optimizer, scheduler, config.device, config.epochs
     )
     
     # Step 5: Load best model (optional, since we save the final model)
@@ -374,8 +378,8 @@ if __name__ == "__main__":
     # Step 6: Generate diverse result visualizations
     plot_training_history(history)
     plot_confusion_matrix(all_labels, all_preds, class_names)
-    plot_predictions(model, val_loader, class_names, DEVICE)
-    plot_patch_attention(model, val_loader, class_names, DEVICE)
+    plot_predictions(model, val_loader, class_names, config.device)
+    plot_patch_attention(model, val_loader, class_names, config.device)
     
     # Step 7: Print classification report
     print("\nClassification Report:")
