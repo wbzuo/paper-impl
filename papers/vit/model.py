@@ -59,11 +59,11 @@ class PatchEmbedding(nn.Module):
 
         return x
 
-# input = torch.randn(128, 3, 224,224)
-# pathcEmbedding = PatchEmbedding()
-# output = pathcEmbedding(input)
-# print(f"shape of input is {input.shape}")
-# print(f"shape of output is {output.shape}")
+input = torch.randn(128, 3, 224,224)
+pathcEmbedding = PatchEmbedding()
+output = pathcEmbedding(input)
+print(f"shape of input is {input.shape}")
+print(f"shape of output is {output.shape}")
 
 # 注意力机制 # 官网实现
 # class MultiHeadAttention(nn.Module):
@@ -204,94 +204,173 @@ class MultiHeadAttention(nn.Module):
 # print(f"shape of output is {output.shape}")
 
 
-class ResidualAdd(nn.Module):
-    def __init__(self, fn):
+
+class MLP(nn.Module):
+    """
+    Multi-Layer Perceptron for Transformer encoder
+    Input: (B, N, D)
+    Output: (B, N, D)
+    """
+    expansion = 4
+
+    def __init__(self, embed_dim=256, hidden_dim=1024, dropout=0.1):
         super().__init__()
-        self.fn = fn
+        self.fc1 = nn.Linear(embed_dim, hidden_dim)  # Expand to 4x dimension
+        self.fc2 = nn.Linear(hidden_dim, embed_dim)  # Project back
+        self.dropout = nn.Dropout(dropout)
+        self.gelu = nn.GELU()  # Activation function
         
-    def forward(self, x, **kwargs):
-        res = x
-        x = self.fn(x, **kwargs)
-        x += res
+    def forward(self, x):
+        x = self.fc1(x)  # (B, 65, 256) -> (B, 65, 1024)
+        x = self.gelu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)  # (B, 65, 1024) -> (B, 65, 256)
+        x = self.dropout(x)
+        return x
+# input = torch.randn(128, 197, 768)
+
+# mlp = MLP(768, 1024, 0.1)
+# output = mlp(input)
+# print(f"shape of input is {input.shape}")
+# print(f"shape of output is {output.shape}")
+
+class TransformerEncoderLayer(nn.Module):
+    """
+    Single layer of Transformer encoder
+    Input: (B, N, D)
+    Output: (B, N, D)
+    """
+    def __init__(self, embed_dim=256, num_heads=8, hidden_dim=1024, dropout=0.1):
+        super().__init__()
+        # Layer normalization before MHSA
+        self.ln1 = nn.LayerNorm(embed_dim)
+        # Multi-Head Self-Attention
+        self.mha = MultiHeadAttention(embed_dim, num_heads, dropout)
+        # Layer normalization before MLP
+        self.ln2 = nn.LayerNorm(embed_dim)
+        # MLP block
+        self.mlp = MLP(embed_dim, hidden_dim, dropout)
+        
+    def forward(self, x):
+        # Residual connection + MHSA
+        x = x + self.mha(self.ln1(x))  # (B, 65, 256)
+        # Residual connection + MLP
+        x = x + self.mlp(self.ln2(x))  # (B, 65, 256)
         return x
 
+# input = torch.randn(128, 197, 768)
 
+# encoderLayer = TransformerEncoderLayer(768, 8, 1024, 0.1)
+# output = encoderLayer(input)
+# print(f"shape of input is {input.shape}")
+# print(f"shape of output is {output.shape}")
 
-class FeedForwardBlock(nn.Sequential):
-    def __init__(self, emb_size: int, expansion: int = 4, drop_p: float = 0.):
-        super().__init__(
-            nn.Linear(emb_size, expansion * emb_size),
-            nn.GELU(),
-            nn.Dropout(drop_p),
-            nn.Linear(expansion * emb_size, emb_size),
+class VisionTransformer(nn.Module):
+    """
+    Full Vision Transformer model for image classification
+    Input: (B, C, H, W)
+    Output: (B, num_classes)
+    """
+    def __init__(
+        self,
+        img_size=32,
+        patch_size=4,
+        in_ch=3,
+        embed_dim=256,
+        num_heads=8,
+        num_layers=6,
+        hidden_dim=1024,
+        num_classes=10,
+        dropout=0.1
+    ):
+        super().__init__()
+        # Patch embedding + class token + positional embedding
+        self.patch_embed = PatchEmbedding(
+            img_size = img_size, 
+            patch_size = patch_size, 
+            in_channels = in_ch, 
+            emb_size = embed_dim
         )
-
-class TransformerEncoderBlock(nn.Sequential):
-    def __init__(self,
-                 emb_size: int = 768,
-                 drop_p: float = 0.,
-                 forward_expansion: int = 4,
-                 forward_drop_p: float = 0.,
-                 ** kwargs):
-        super().__init__(
-            ResidualAdd(nn.Sequential(
-                nn.LayerNorm(emb_size),
-                MultiHeadAttention(emb_size, **kwargs),
-                nn.Dropout(drop_p)
-            )),
-            ResidualAdd(nn.Sequential(
-                nn.LayerNorm(emb_size),
-                FeedForwardBlock(
-                    emb_size, expansion=forward_expansion, drop_p=forward_drop_p),
-                nn.Dropout(drop_p)
-            )
-            ))
-       
         
-class TransformerEncoder(nn.Sequential):
-    def __init__(self, depth: int = 12, **kwargs):
-        super().__init__(*[TransformerEncoderBlock(**kwargs) for _ in range(depth)])
-
+        # Transformer encoder (stack multiple layers)
+        self.encoder_layers = nn.ModuleList([
+            TransformerEncoderLayer(embed_dim, num_heads, hidden_dim, dropout)
+            for _ in range(num_layers)
+        ])
         
-class ClassificationHead(nn.Sequential):
-    def __init__(self, emb_size: int = 768, n_classes: int = 1000):
-        super().__init__(
-            Reduce('b n e -> b e', reduction='mean'),
-            nn.LayerNorm(emb_size), 
-            nn.Linear(emb_size, n_classes))
-
+        # Layer normalization for encoder output
+        self.ln = nn.LayerNorm(embed_dim)
         
-class ViT(nn.Sequential):
-    def __init__(self,     
-                in_channels: int = 3,
-                patch_size: int = 16,
-                emb_size: int = 768,
-                img_size: int = 224,
-                depth: int = 12,
-                n_classes: int = 1000,
-                **kwargs):
-        super().__init__(
-            PatchEmbedding(in_channels, patch_size, emb_size, img_size),
-            TransformerEncoder(depth, emb_size=emb_size, **kwargs),
-            ClassificationHead(emb_size, n_classes)
-        )
+        # Classification head (linear layer)
+        self.classifier = nn.Linear(embed_dim, num_classes)
+        
+        # Initialize weights
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, m):
+        """Initialize model weights (improve training stability)"""
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Conv2d):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.zeros_(m.bias)
+            nn.init.ones_(m.weight)
+    
+    def forward(self, x):
+        # Step 1: Patch embedding + positional encoding (B, C, H, W) -> (B, N+1, D)
+        x = self.patch_embed(x)  # (B, 65, 256)
+        
+        # Step 2: Pass through Transformer encoder layers
+        for layer in self.encoder_layers:
+            x = layer(x)  # (B, 65, 256)
+        
+        # Step 3: Layer normalization
+        x = self.ln(x)  # (B, 65, 256)
+        
+        # Step 4: Extract class token feature (B, D)
+        class_token_feature = x[:, 0, :]  # (B, 256)
+        
+        # Step 5: Classification head (B, num_classes)
+        logits = self.classifier(class_token_feature)  # (B, 10)
+        
+        return logits
 
+from config.base import get_config
 
 if __name__ == "__main__":
     print("start")
-    input = torch.rand([128, 3, 32, 32])
+    input = torch.rand([128, 3, 224, 224])
     print(f"shape of input is {input.shape}")
     # model = PatchEmbedding(3, 16, 768)
     # output = model(input)
     # print(output.shape)
     # att = MultiHeadAttention()
     # output = att(output)
-    model = ViT(in_channels = 3,
-                patch_size = 4,
-                emb_size = 384,
-                img_size = 32,
-                depth = 6,
-                n_classes = 10)
+    # Step 2: Initialize ViT model
+
+    config = get_config()
+
+    # Step 2: Initialize ViT model
+    model = VisionTransformer(
+        img_size=config.img_size,
+        patch_size=config.patch_size,
+        in_ch=config.in_channels,
+        embed_dim=config.embed_dim,
+        num_heads=config.num_heads,
+        num_layers=config.num_layers,
+        hidden_dim=int(config.embed_dim * config.mlp_ratio),
+        num_classes=config.num_classes,
+        dropout=config.dropout
+    )
+    device = config.device
+    model.to(device)
+
+    
     output = model(input)
     print(f"shape of output is {output.shape}")
     

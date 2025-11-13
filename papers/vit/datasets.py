@@ -5,7 +5,7 @@ import torchvision
 import numpy as np
 import matplotlib.pyplot as plt
 
-def load_transformed_dataset(img_size = 224, batch_size = 129) -> DataLoader:
+def load_transformed_dataset(img_size = 32, batch_size = 129) -> DataLoader:
     train_transform = transforms.Compose([
         transforms.Resize((img_size, img_size)),
         transforms.RandomHorizontalFlip(),
@@ -19,13 +19,13 @@ def load_transformed_dataset(img_size = 224, batch_size = 129) -> DataLoader:
         ])
     
     # load dataset
-    train_dataset = torchvision.datasets.CIFAR10(root=r"C:\Users\Administrator\Desktop\251\study\datasets",
+    train_dataset = torchvision.datasets.CIFAR10(root=r"/Users/wbzuo/Documents/07-datasets",
                                                  train=True,
-                                                 download=False,
+                                                 download=True,
                                                  transform=train_transform)
-    test_dataset = torchvision.datasets.CIFAR10(root=r"C:\Users\Administrator\Desktop\251\study\datasets",
+    test_dataset = torchvision.datasets.CIFAR10(root=r"/Users/wbzuo/Documents/07-datasets",
                                                  train=False,
-                                                 download=False,
+                                                 download=True,
                                                  transform=test_transform)
 
     
@@ -53,6 +53,7 @@ def show_tensor_image(image):
 
 if __name__ == "__main__":
     train_loader, test_loader = load_transformed_dataset()
-    image, _ = next(iter(train_loader))
+    image, labels = next(iter(train_loader))
+    print(image.shape, labels.shape)
     plt.imshow(show_tensor_image(image))
     plt.show()
