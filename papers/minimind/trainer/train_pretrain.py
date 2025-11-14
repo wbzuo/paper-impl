@@ -40,6 +40,7 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
+
         with autocast_ctx:
             res = model(X)
             loss = loss_fct(
@@ -48,6 +49,7 @@ def train_epoch(epoch, loader, iters, start_step=0, wandb=None):
             ).view(Y.size())
 
             loss = (loss * loss_mask).sum() / loss_mask.sum()
+            # todo: add the auto adaptive power
             loss += res.aux_loss
             loss = loss / args.accumulation_steps
 

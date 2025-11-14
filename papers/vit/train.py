@@ -31,7 +31,7 @@ def train_one_epoch(model, criterion ,optimizer ,train_loader, device, epoch):
 
         # Calculate loss
         loss = criterion(outputs, labels)
-        total_loss += loss.item()
+        total_loss += loss.item()*  images.size(0)
 
         # Backward pass and optimization
         loss.backward()
@@ -48,6 +48,7 @@ def train_one_epoch(model, criterion ,optimizer ,train_loader, device, epoch):
         avg_loss = total_loss / total_samples
         avg_acc = total_correct / total_samples
         pbar.set_postfix({'Epoch': f'{epoch + 1}','Loss': f'{avg_loss:.4f}', 'Acc': f'{avg_acc:.4f}'})
+    return avg_loss, avg_acc
 
 def validate(model, val_loader, criterion, device):
     
@@ -67,11 +68,11 @@ def validate(model, val_loader, criterion, device):
 
             # Calculate loss
             loss = criterion(outputs, labels)
-            total_loss += loss.item()
+            total_loss += loss.item() * images.size(0)
 
             # Calculate accuracy
             _, predicted = torch.max(outputs, 1)
-            correct = (outputs == labels).sum().item()
+            correct = (predicted == labels).sum().item()
             total_correct += correct
             total_samples += images.size(0)
 
@@ -304,32 +305,10 @@ from dataclasses import dataclass
 # ======================== Main Function (One-Click Run) ========================
 if __name__ == "__main__":
     # Hyperparameters
-    config = {
-         # model params
-        'img_size': 224,
-        'in_channels':3,
-        'num_heads':8,
-        'hidden_dim':1024,
-        'dropout':0.1,
-        'patch_size': 16,
-        'embed_size': 768,
-        'img_size': 224,
-        'num_layers': 6,
-        'n_classes': 10,
-
-        # dataset params
-        'batch_size': 64,
-
-        # train process params
-        'epochs': 10,
-        'learning_rate': 1e-2,
-        'weight_decay': 1e-5,
-        'device': torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    }
-    # 
     from config import get_config
     config = get_config()
     # Step 1: Load data
+
     train_loader, val_loader = load_transformed_dataset(img_size = config.img_size ,batch_size=config.batch_size)
     class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
                    'dog', 'frog', 'horse', 'ship', 'truck']

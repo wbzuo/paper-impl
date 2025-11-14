@@ -9,7 +9,7 @@ class ViTConfig:
     
     # 图像参数
     img_size: int = 32
-    patch_size: int = 8
+    patch_size: int = 4
     in_channels: int = 3
     
     # Transformer架构参数
@@ -25,7 +25,7 @@ class ViTConfig:
 
     
     # 训练参数
-    batch_size: int = 16
+    batch_size: int = 1024
     lr: float = 1e-3
     epochs: int = 300
     weight_decay: float = 1e-5
@@ -57,30 +57,28 @@ def get_config() -> ViTConfig:
     
     # 模型架构参数组
     model_group = parser.add_argument_group('Model Architecture')
-    model_group.add_argument('--img_size', type=int, default=224, 
+    model_group.add_argument('--img_size', type=int, default=32, 
                            help='Input image size')
-    model_group.add_argument('--patch_size', type=int, default=16,
+    model_group.add_argument('--patch_size', type=int, default=4,
                            help='Patch size')
-    model_group.add_argument('--embed_dim', type=int, default=768,
-                           help='Embedding dimension')
-    model_group.add_argument('--hidden_dim', type=int, default=1024,
-                           help='MLP hidden dimension')                           
-    model_group.add_argument('--num_layers', type=int, default=12,
+    model_group.add_argument('--embed_dim', type=int, default=256,
+                           help='Embedding dimension')                  
+    model_group.add_argument('--num_layers', type=int, default=6,
                            help='Number of transformer layers')
-    model_group.add_argument('--num_heads', type=int, default=12,
+    model_group.add_argument('--num_heads', type=int, default=4,
                            help='Number of attention heads')
-    model_group.add_argument('--mlp_ratio', type=float, default=4.0,
+    model_group.add_argument('--mlp_ratio', type=float, default=2.0,
                            help='MLP hidden dimension ratio')
-    model_group.add_argument('--num_classes', type=int, default=1000,
+    model_group.add_argument('--num_classes', type=int, default=10,
                            help='Number of classes')
     
     # 训练参数组
     training_group = parser.add_argument_group('Training')
-    training_group.add_argument('--batch_size', type=int, default=32,
+    training_group.add_argument('--batch_size', type=int, default=2048,
                               help='Batch size')
     training_group.add_argument('--lr', type=float, default=1e-3,
                               help='Learning rate')
-    training_group.add_argument('--epochs', type=int, default=300,
+    training_group.add_argument('--epochs', type=int, default=1,
                               help='Number of epochs')
     training_group.add_argument('--weight_decay', type=float, default=1e-5,
                               help='Weight decay')
