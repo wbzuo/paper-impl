@@ -185,6 +185,107 @@ class ResNet(nn.Module):
         return x
 
 
+
+class PatchUpModel(nn.Module):
+    def __init__(self, model, num_classes = 10, block_size=7, gamma=.9, patchup_type='hard',keep_prob=.9):
+        super().__init__()
+        self.patchup_type = patchup_type
+        self.block_size = block_size
+        self.gamma = gamma
+        self.gamma_adj = None
+        self.kernel_size = (block_size, block_size)
+        self.stride = (1, 1)
+        self.padding = (block_size // 2, block_size // 2)
+        self.computed_lam = None
+        
+        self.model = model
+        self.num_classes = num_classes
+        self. module_list = []
+        for n,m in self.model.named_modules():
+            if n[:-1]=='layer':
+            #if 'conv' in n:
+                self.module_list.append(m)
+
+    def adjust_gamma(self, x):
+        return self.gamma * x.shape[-1] ** 2 / \
+               (self.block_size ** 2 * (x.shape[-1] - self.block_size + 1) ** 2)
+
+    def forward(self, x, target=None):
+        if target==None:
+            out = self.model(x)
+            return out
+        else:
+
+            self.lam = np.random.beta(2.0, 2.0)
+            k = np.random.randint(-1, len(self.module_list))
+            self.indices = torch.randperm(target.size(0)).cuda()
+            self.target_onehot = to_one_hot(target, self.num_classes)
+            self.target_shuffled_onehot = self.target_onehot[self.indices]
+            
+            if k == -1:  #CutMix
+                W,H = x.size(2),x.size(3)
+                cut_rat = np.sqrt(1. - self.lam)
+                cut_w = np.int(W * cut_rat)
+                cut_h = np.int(H * cut_rat)
+                cx = np.random.randint(W)
+                cy = np.random.randint(H)
+        
+                bbx1 = np.clip(cx - cut_w // 2, 0, W)
+                bby1 = np.clip(cy - cut_h // 2, 0, H)
+                bbx2 = np.clip(cx + cut_w // 2, 0, W)
+                bby2 = np.clip(cy + cut_h // 2, 0, H)
+                
+                x[:, :, bbx1:bbx2, bby1:bby2] = x[self.indices, :, bbx1:bbx2, bby1:bby2]
+                lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (W * H))
+                out = self.model(x)
+                loss = bce_loss(softmax(out), self.target_onehot) * lam +\
+                    bce_loss(softmax(out), self.target_shuffled_onehot) * (1. - lam)
+                
+            else:
+                modifier_hook = self.module_list[k].register_forward_hook(self.hook_modify)
+                out = self.model(x)
+                modifier_hook.remove()
+                
+                loss = 1.0 * bce_loss(softmax(out), self.target_a) * self.total_unchanged_portion + \
+                     bce_loss(softmax(out), self.target_b) * (1. - self.total_unchanged_portion) + \
+                    1.0 * bce_loss(softmax(out), self.target_reweighted)
+            return out, loss
+        
+    def hook_modify(self, module, input, output):
+        self.gamma_adj = self.adjust_gamma(output)
+        p = torch.ones_like(output[0]) * self.gamma_adj
+        m_i_j = torch.bernoulli(p)
+        mask_shape = len(m_i_j.shape)
+        m_i_j = m_i_j.expand(output.size(0), m_i_j.size(0), m_i_j.size(1), m_i_j.size(2))
+        holes = F.max_pool2d(m_i_j, self.kernel_size, self.stride, self.padding)
+        mask = 1 - holes
+        unchanged = mask * output
+        if mask_shape == 1:
+            total_feats = output.size(1)
+        else:
+            total_feats = output.size(1) * (output.size(2) ** 2)
+        total_changed_pixels = holes[0].sum()
+        total_changed_portion = total_changed_pixels / total_feats
+        self.total_unchanged_portion = (total_feats - total_changed_pixels) / total_feats
+        if self.patchup_type == 'hard':
+            self.target_reweighted = self.total_unchanged_portion * self.target_onehot +\
+                total_changed_portion * self.target_shuffled_onehot
+            patches = holes * output[self.indices]
+            self.target_b = self.target_onehot[self.indices]
+        elif self.patchup_type == 'soft':
+            self.target_reweighted = self.total_unchanged_portion * self.target_onehot +\
+                self.lam * total_changed_portion * self.target_onehot +\
+                (1 - self.lam) * total_changed_portion * self.target_shuffled_onehot
+            patches = holes * output
+            patches = patches * self.lam + patches[self.indices] * (1 - self.lam)
+            self.target_b = self.lam * self.target_onehot + (1 - self.lam) * self.target_shuffled_onehot
+        else:
+            raise ValueError("patchup_type must be \'hard\' or \'soft\'.")
+        
+        output = unchanged + patches
+        self.target_a = self.target_onehot
+        return output
+
         
 # block测试    
 # 假设输入为一个 batch 大小为 4 的特征图，通道为 64，尺寸为 56x56（与ResNet的常规配置一致）
@@ -248,6 +349,7 @@ def main():
     # ResNet-101	Bottleneck	[3, 4, 23, 3]
     # ResNet-152	Bottleneck	[3, 8, 36, 3]	
     model = ResNet(Bottleneck, [3, 4, 23, 3])
+    model = PatchUpModel(model,num_classes=10, block_size=7, gamma=.9, patchup_type='hard')
     
     # 2. 将模型移动到设备
     model.to(device)

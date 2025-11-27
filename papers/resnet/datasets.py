@@ -19,11 +19,11 @@ def load_transformed_dataset(img_size = 32, batch_size = 129) -> DataLoader:
     ])
     
     # load dataset
-    train_dataset = torchvision.datasets.CIFAR10(root="./datasets",
+    train_dataset = torchvision.datasets.CIFAR10(root="/Users/wbzuo/Documents/07-datasets",
                                                  train=True,
                                                  download=False,
                                                  transform=train_transform)
-    test_dataset = torchvision.datasets.CIFAR10(root="./datasets",
+    test_dataset = torchvision.datasets.CIFAR10(root="/Users/wbzuo/Documents/07-datasets",
                                                  train=False,
                                                  download=False,
                                                  transform=test_transform)

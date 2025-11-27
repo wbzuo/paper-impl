@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from torch import nn
 from datasets import load_transformed_dataset  # Assuming this loads the dataset with necessary transformations
 from tqdm import tqdm
-from model import VisionTransformer
+from models import ResNet, Bottleneck, BasicBlock, PatchUpModel     # Assuming ResNet model is defined in models.py
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
@@ -71,13 +71,13 @@ def validate(model, val_loader, criterion, device):
             total_loss += loss.item() * images.size(0)
 
             # Calculate accuracy
-            _, predicted = torch.max(outputs, 1)
-            correct = (predicted == labels).sum().item()
+            preds = outputs.argmax(dim=1)
+            correct = (preds == labels).sum().item()
             total_correct += correct
             total_samples += images.size(0)
 
             # Collect preds and labels for confusion matrix
-            all_preds.extend(outputs.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
             # Update progress bar
@@ -123,8 +123,8 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
               f'Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f}')
     
     # Save trained model
-    torch.save(model.state_dict(), 'vit_cifar10.pth')
-    print(f"Model saved as 'vit_cifar10.pth'")
+    torch.save(model.state_dict(), 'resnet_18_cifar10.pth')
+    print(f"Model saved as 'resnet_18_cifar10.pth'")
     
     return history, all_preds, all_labels
 
@@ -299,14 +299,52 @@ def plot_patch_attention(model, val_loader, class_names, device, save_path='atte
 
 
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List
+import random
+import numpy as np
+import os
 
+@dataclass
+class Config:
+    # data
+    img_size: int = 32
+
+    # model
+    block = BasicBlock          # 类常量，不作为 __init__ 参数 [web:9][web:25]
+    layers: List[int] = field(default_factory=lambda: [2, 2, 2, 2])  # 可变默认用 default_factory [web:9][web:3]
+    num_classes: int = 10
+    zero_init_residual: bool = True
+
+    # training
+    lr: float = 3e-4
+    weight_decay: float = 5e-2
+    batch_size: int = 256
+    epochs: int = 20
+    device: str  = (
+        'cuda' if torch.cuda.is_available()
+        else 'mps' if torch.backends.mps.is_available()
+        else 'cpu'
+    )
+
+# 设置随机种子 保证数据可重复
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+
+set_seed(42)
 
 # ======================== Main Function (One-Click Run) ========================
 if __name__ == "__main__":
     # Hyperparameters
-    from config import get_config
-    config = get_config()
+    config = Config()
     # Step 1: Load data
 
     train_loader, val_loader = load_transformed_dataset(img_size = config.img_size ,batch_size=config.batch_size)
@@ -314,20 +352,18 @@ if __name__ == "__main__":
                    'dog', 'frog', 'horse', 'ship', 'truck']
     
     # Step 2: Initialize ViT model
-    model = VisionTransformer(
-        img_size=config.img_size,
-        patch_size=config.patch_size,
-        in_ch=config.in_channels,
-        embed_dim=config.embed_dim,
-        num_heads=config.num_heads,
-        num_layers=config.num_layers,
-        hidden_dim=int(config.embed_dim * config.mlp_ratio),
-        num_classes=config.num_classes,
-        dropout=config.dropout
-    )
+    # ResNet-18	BasicBlock	[2, 2, 2, 2]	
+    # ResNet-34	BasicBlock	[3, 4, 6, 3]	
+    # ResNet-50	Bottleneck	[3, 4, 6, 3]	
+    # ResNet-101	Bottleneck	[3, 4, 23, 3]
+    # ResNet-152	Bottleneck	[3, 8, 36, 3]	
+    model = ResNet(config.block, config.layers, config.num_classes, config.zero_init_residual)
+
+    model = PatchUpModel(model,num_classes=config.num_classes, block_size=7, gamma=.9, patchup_type='hard')
+
     device = config.device
     model.to(device)
-    print(f"ViT model initialized. Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"ResNet model initialized. Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
     
 #     # Step 3: Define loss function and optimizer
     criterion = nn.CrossEntropyLoss()  # Classification task
@@ -344,21 +380,22 @@ if __name__ == "__main__":
     
     # Step 4: Train model
     # a, b = train_one_epoch(model, criterion ,optimizer ,train_loader, config.device, config.epochs)
-    # 
 
-    # print(a, b)
+#     # print(a, b)
     history, all_preds, all_labels = train_model(
         model, train_loader, val_loader, criterion, optimizer, scheduler, config.device, config.epochs
     )
     
-    # Step 5: Load best model (optional, since we save the final model)
-    model.load_state_dict(torch.load('vit_cifar10.pth', map_location=config.device))
+#     # Step 5: Load best model (optional, since we save the final model)
+    model.load_state_dict(torch.load('resnet_18_cifar10.pth', map_location=config.device))
     
     # Step 6: Generate diverse result visualizations
     plot_training_history(history)
+    print(all_labels[:10], all_preds[:10])
     plot_confusion_matrix(all_labels, all_preds, class_names)
+    
     plot_predictions(model, val_loader, class_names, config.device)
-    plot_patch_attention(model, val_loader, class_names, config.device)
+    # plot_patch_attention(model, val_loader, class_names, config.device)
     
     # Step 7: Print classification report
     print("\nClassification Report:")
