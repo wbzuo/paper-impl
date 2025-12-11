@@ -311,8 +311,8 @@ class Config:
     img_size: int = 32
 
     # model
-    block = BasicBlock          # 类常量，不作为 __init__ 参数 [web:9][web:25]
-    layers: List[int] = field(default_factory=lambda: [2, 2, 2, 2])  # 可变默认用 default_factory [web:9][web:3]
+    block = Bottleneck          # 类常量，不作为 __init__ 参数 [web:9][web:25]
+    layers: List[int] = field(default_factory=lambda: [3, 4, 23, 3])  # 可变默认用 default_factory [web:9][web:3]
     num_classes: int = 10
     zero_init_residual: bool = True
 
@@ -320,7 +320,7 @@ class Config:
     lr: float = 3e-4
     weight_decay: float = 5e-2
     batch_size: int = 256
-    epochs: int = 20
+    epochs: int = 50
     device: str  = (
         'cuda' if torch.cuda.is_available()
         else 'mps' if torch.backends.mps.is_available()
