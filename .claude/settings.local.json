@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude doctor *)",
+      "Bash(claude --version)",
+      "Bash(/d/Development/nodejs/node_modules/@anthropic-ai/claude-code/bin/claude.exe doctor *)",
+      "Bash(\"D:/Development/nodejs/node_modules/@anthropic-ai/claude-code/bin/claude.exe\" doctor *)",
+      "Bash(echo \"exit: $?\")",
+      "PowerShell(& \"D:\\\\Development\\\\nodejs\\\\node_modules\\\\@anthropic-ai\\\\claude-code\\\\bin\\\\claude.exe\" doctor 2>&1)"
+    ]
+  }
+}
